@@ -17,79 +17,46 @@
 using namespace std;
 using namespace cv;
 
-const float PI = 3.1415;
+__constant__ float PI = 3.1415;
 
-__device__ float twoDimGaussian(int row, int col, float theta = 1.0)
+__device__ float twoDimGaussian(int x, int y, float theta)
 {
-    float coeffient = 1 / (2 * PI*pow(theta, 2));
-    float powerIndex = -(pow(row, 2) + pow(col, 2)) / (2 * pow(theta, 2));
-    return coeffient*exp(powerIndex);
+    float coeffient = 1 / (2 * PI*powf(theta, 2));
+    float powerIndex = -(powf(x, 2) + powf(y, 2)) / (2 * powf(theta, 2));
+    return coeffient*expf(powerIndex);
 }
 
-void normalizeMatrix(Mat & img)
+__device__ void gaussianKernel(cuda::GpuMat* gaussianMatrix, int row, int col, int radius, float theta)
 {
-    float sum = 0.0;
-    for (size_t i = 0; i < img.rows; i++)
+    // Mat gaussianMatrix(Size(2 * radius + 1, 2 * radius + 1), CV_32F, Scalar(0));
+    if (row < gaussianMatrix->rows&&col < gaussianMatrix->cols)
     {
-        for (size_t j = 0; j < img.cols; j++)
+        gaussianMatrix->ptr<float>(row)[col] = twoDimGaussian(col - radius, radius - row, theta);
+
+        float sum = 0.0;
+        if (row < gaussianMatrix->rows&&col < gaussianMatrix->cols)
         {
-            sum += (float)img.at<float>(i, j);
-        }
-    }
-    cout << "sum: " << sum << endl;
-    for (size_t i = 0; i < img.rows; i++)
-    {
-        for (size_t j = 0; j < img.cols; j++)
-        {
-            img.at<float>(i, j) = img.at<float>(i, j) / sum;
+            sum += gaussianMatrix->ptr<float>(row)[col];
+            gaussianMatrix->ptr<float>(row)[col] = gaussianMatrix->ptr<float>(row)[col] / sum;
         }
     }
 }
 
-Mat gaussianKernel(int rows, int cols, float theta = 1.0)
-{
-    Mat gaussianMatrix(Size(cols, rows), CV_32F, Scalar(0));
-    int radius = rows / 2;
-    for (size_t i = 0; i < rows; i++)
-    {
-        for (size_t j = 0; j < cols; j++)
-        {
-            gaussianMatrix.at<float>(i, j) = twoDimGaussian(j - radius, radius - i, theta);
-        }
-    }
-
-    // normalize gaussian matrix
-    normalizeMatrix(gaussianMatrix);
-    return gaussianMatrix;
-}
-
-void convolutionMatrix(Mat & input, Mat & kernel, Mat & output)
-{
-    for (size_t i = 0; i < input.rows; i++)
-    {
-        for (size_t j = 0; j < input.cols; j++)
-        {
-            for (size_t m = 0; m < kernel.rows; m++)
-            {
-                for (size_t n = 0; n < kernel.cols; n++)
-                {
-                    output.at<float>(i + m, j + n) += ((float)input.at<uchar>(i, j))*kernel.at<float>(m, n);                 
-                }
-            }
-        }
-    }
-}
-
-__global__ void gaussianBlur(cuda::GpuMat* input, cuda::GpuMat* kernel, cuda::GpuMat* output)
+__global__ void gaussianBlur(cuda::GpuMat* input, cuda::GpuMat* output, int radius, float theta = 1.0)
 {
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
-    
-    for (size_t i = 0; i < kernel.rows; i++)
+
+    if (row < input->rows&&col < input->cols)
     {
-        for (size_t j = 0; j < kernel.cols; j++)
+        cuda::GpuMat gaussianMatrix(2 * radius + 1, 2 * radius + 1, CV_32F, Scalar(0));
+        gaussianKernel(&gaussianMatrix, row, col, radius, theta);
+        for (size_t i = 0; i < gaussianMatrix.rows; i++)
         {
-            output.at<float>(row + i, col + j) += ((float)input.at<uchar>(row, col)) * kernel.at<float>(i, j);
+            for (size_t j = 0; j < gaussianMatrix.cols; j++)
+            {
+                output->ptr<float>(row + i)[col + j] += ((float)input->ptr<uchar>(row)[col]) * gaussianMatrix.ptr<float>(i)[j];
+            }
         }
     }
 }
@@ -98,24 +65,36 @@ __global__ void gaussianBlur(cuda::GpuMat* input, cuda::GpuMat* kernel, cuda::Gp
 int main(int argc, char** argv)
 {
     string path = "1.jpg";
-    Mat input = imread(path, IMREAD_GRAYSCALE);
-    vector<Mat> ch;
-    split(input, ch);
-    const int r = 3;
-    Mat gaussianKenrel = gaussianKernel(r, r, 1.5);
 
-    Mat result(Size(input.cols + r - 1, input.rows + r - 1), CV_32F, Scalar(0));
-    convolutionMatrix(input, gaussianKenrel, result);
+    Mat hostInput = imread(path, IMREAD_GRAYSCALE);
+    cuda::GpuMat* deviceInput;
+    deviceInput->upload(hostInput);
+    Mat hostResult; cuda::GpuMat* deviceResult;
+
+    // so the matrix size is 2 * radius + 1, use even number is convenient for computing.
+    int radius = 2;
+    dim3 blockSize(0, 0);
+    dim3 threadSize(0, 0);
+    //gaussianBlur <<<blockSize, threadSize>>> (deviceInput, deviceResult, radius);
+    cudaError_t error = cudaDeviceSynchronize();
+    if (error != cudaSuccess)
+    {
+        cout << cudaGetErrorString(error) << endl;
+    }
+
+    deviceResult->download(hostResult);
+    //Mat result(Size(input.cols + 2 * radius, input.rows + 2 * radius), CV_32F, Scalar(0));
+    //convolutionMatrix(input, gaussianKenrel, result);
     
     /* 
     need to convert to CV_8U type, because a CV_32F image, whose pixel value ranges from 0.0 to 1.0
     http://stackoverflow.com/questions/14539498/change-type-of-mat-object-from-cv-32f-to-cv-8u
     */
-    result.convertTo(result, CV_8U);
+    //result.convertTo(result, CV_8U);
 
     string title = "CUDA";
     namedWindow(title);
-    imshow(title, result);
+    imshow(title, hostInput);
 
     waitKey(0);
     //system("pause");
