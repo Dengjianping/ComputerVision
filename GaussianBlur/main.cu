@@ -73,8 +73,20 @@ int main(int argc, char** argv)
 
     // so the matrix size is 2 * radius + 1, use even number is convenient for computing.
     int radius = 2;
-    dim3 blockSize(0, 0);
-    dim3 threadSize(0, 0);
+    
+    /*
+    my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least, 
+    each block can contain 1024 threads at most in my device, so ,I can define block size as 600 * 450 / 1024 = 263 (20 * 15)
+    */
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, deviceCount - 1);
+    int blockCount = ceil(hostResult.rows * hostResult.cols / prop.maxThreadsPerBlock);
+    blockCount = ceil(sqrt(blockCount));
+    dim3 blockSize(blockCount, blockCount);
+    dim3 threadSize(32, 32);
+    
     //gaussianBlur <<<blockSize, threadSize>>> (deviceInput, deviceResult, radius);
     cudaError_t error = cudaDeviceSynchronize();
     if (error != cudaSuccess)
