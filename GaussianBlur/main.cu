@@ -26,7 +26,7 @@ __device__ float twoDimGaussian(int x, int y, float theta)
     return coeffient*expf(powerIndex);
 }
 
-__device__ void gaussianKernel(cuda::GpuMat* gaussianMatrix, int row, int col, int radius, float theta)
+/*__device__ void gaussianKernel(cuda::GpuMat* gaussianMatrix, int row, int col, int radius, float theta)
 {
     // Mat gaussianMatrix(Size(2 * radius + 1, 2 * radius + 1), CV_32F, Scalar(0));
     if (row < gaussianMatrix->rows&&col < gaussianMatrix->cols)
@@ -44,18 +44,55 @@ __device__ void gaussianKernel(cuda::GpuMat* gaussianMatrix, int row, int col, i
 
 __global__ void gaussianBlur(cuda::GpuMat* input, cuda::GpuMat* output, int radius, float theta = 1.0)
 {
+int row = blockDim.y*blockIdx.y + threadIdx.y;
+int col = blockDim.x*blockIdx.x + threadIdx.x;
+
+if (row < input->rows&&col < input->cols)
+{
+cuda::GpuMat gaussianMatrix(2 * radius + 1, 2 * radius + 1, CV_32F, Scalar(0));
+gaussianKernel(&gaussianMatrix, row, col, radius, theta);
+for (size_t i = 0; i < gaussianMatrix.rows; i++)
+{
+for (size_t j = 0; j < gaussianMatrix.cols; j++)
+{
+output->ptr<float>(row + i)[col + j] += ((float)input->ptr<uchar>(row)[col]) * gaussianMatrix.ptr<float>(i)[j];
+}
+}
+}
+}
+
+*/
+
+__device__ void gaussianKernel(cuda::PtrStepSzf gaussianMatrix, int row, int col, int radius, float theta)
+{
+    // Mat gaussianMatrix(Size(2 * radius + 1, 2 * radius + 1), CV_32F, Scalar(0));
+    if (row < gaussianMatrix.rows&&col < gaussianMatrix.cols)
+    {
+        gaussianMatrix(row, col) = twoDimGaussian(col - radius, radius - row, theta);
+
+        float sum = 0.0;
+        if (row < gaussianMatrix.rows&&col < gaussianMatrix.cols)
+        {
+            sum += gaussianMatrix(row, col);
+            gaussianMatrix(row, col) = gaussianMatrix(row, col) / sum;
+        }
+    }
+}
+
+__global__ void gaussianBlur(cuda::PtrStepSzf input, cuda::PtrStepSzf output, cuda::PtrStepSzf kernel, int radius, float theta = 1.0)
+{
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
 
-    if (row < input->rows&&col < input->cols)
+    if (row < input.rows&&col < input.cols)
     {
-        cuda::GpuMat gaussianMatrix(2 * radius + 1, 2 * radius + 1, CV_32F, Scalar(0));
-        gaussianKernel(&gaussianMatrix, row, col, radius, theta);
-        for (size_t i = 0; i < gaussianMatrix.rows; i++)
+        //cuda::PtrStepSzf gaussianMatrix(2 * radius + 1, 2 * radius + 1, CV_32F, Scalar(0));
+        gaussianKernel(kernel, row, col, radius, theta);
+        for (size_t i = 0; i < kernel.rows; i++)
         {
-            for (size_t j = 0; j < gaussianMatrix.cols; j++)
+            for (size_t j = 0; j < kernel.cols; j++)
             {
-                output->ptr<float>(row + i)[col + j] += ((float)input->ptr<uchar>(row)[col]) * gaussianMatrix.ptr<float>(i)[j];
+                output(row + i, col + j) += (float)input(row, col) * kernel(i, j);
             }
         }
     }
@@ -64,15 +101,16 @@ __global__ void gaussianBlur(cuda::GpuMat* input, cuda::GpuMat* output, int radi
 
 int main(int argc, char** argv)
 {
-    string path = "1.jpg";
+    string path = "type-c.jpg";
 
-    Mat hostInput = imread(path, IMREAD_GRAYSCALE);
-    cuda::GpuMat* deviceInput;
-    deviceInput->upload(hostInput);
-    Mat hostResult; cuda::GpuMat* deviceResult;
+    InputArray hostInput = imread(path, IMREAD_GRAYSCALE);
+    cuda::GpuMat deviceInput;
+    deviceInput = hostInput.getGpuMat();
+    int radius = 2;
+    InputArray hostResult(Size(deviceInput.cols + 2 * radius, deviceInput.rows + 2 * radius), CV_32F, Scalar(0));
+    cuda::GpuMat* deviceResult;
 
     // so the matrix size is 2 * radius + 1, use even number is convenient for computing.
-    int radius = 2;
     
     /*
     my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least, 
