@@ -50,7 +50,7 @@ __device__ float twoDimGaussian(int x, int y, float theta)
     }
 }*/
 
-__global__ void gaussianBlur(cuda::PtrStepSzf input, cuda::PtrStepSzf output, thrust::device_vector<thrust::device_vector<float> > kernel, int radius, float theta = 1.0)
+__global__ void gaussianBlur(uchar* input, int rows, int cols, uchar* output, int radius, float theta = 1.0)
 {
     extern __shared__ float gaussian[];
 
@@ -61,8 +61,9 @@ __global__ void gaussianBlur(cuda::PtrStepSzf input, cuda::PtrStepSzf output, th
     {
         gaussian[row*(2 * radius + 1) + col] = twoDimGaussian(col - radius, radius - row, theta);
     }
+    __syncthreads();
 
-    if (row < input.rows&&col < input.cols)
+    if (row < rows&&col < cols)
     {
         for (size_t i = 0; i < 2 * radius + 1; i++)
         {
@@ -74,36 +75,51 @@ __global__ void gaussianBlur(cuda::PtrStepSzf input, cuda::PtrStepSzf output, th
     }
 }
 
-void gaussianBluring(const Mat & source, const Mat & destination, int radius, float theta = 1.0)
+void gaussianBluring(const Mat & src, const Mat & des, int radius, float theta = 1.0)
 {
     // define blocks size and threads size
     int deviceCount;
     cudaGetDeviceCount(&deviceCount);
     cudaDeviceProp prop;
     cudaGetDeviceProperties(&prop, deviceCount - 1);
-    int blockCount = (int)(destination.rows * destination.cols / prop.maxThreadsPerBlock) + 1;
+    int blockCount = (int)(des.rows * des.cols / prop.maxThreadsPerBlock) + 1;
     blockCount = (int)(sqrt(blockCount)) + 1;
     dim3 blockSize(blockCount, blockCount);
     dim3 threadSize(32, 32);
 
     // copy data to device
-    int channelCount = source.channels();
+    int channelCount = src.channels();
     switch (channelCount)
     {
     case 1:
-        uchar* sourceData; uchar* destinationData;
-        cudaMalloc((void**)&sourceData, sizeof(uchar)*source.rows*source.cols);
-        cudaMalloc((void**)&destinationData, sizeof(uchar)*destination.rows*destination.cols);
+        uchar* srcData; float1* desData;
+        cudaMalloc((void**)&srcData, sizeof(uchar)*src.rows*src.cols);
+        cudaMalloc((void**)&desData, sizeof(uchar)*des.rows*des.cols);
 
-        cudaStream_t sourceStream, destinationStream;
-        cudaStreamCreate(&sourceStream); cudaStreamCreate(&destinationStream);
-        cudaMemcpyAsync(sourceData, source.data, sizeof(uchar)*source.rows*source.cols, cudaMemcpyHostToDevice, sourceStream);
-        cudaMemcpyAsync(destinationData, destination.data, sizeof(uchar)*destination.rows*destination.cols, cudaMemcpyHostToDevice, destinationStream);
+        cudaStream_t srcStream, desStream;
+        cudaStreamCreate(&srcStream); cudaStreamCreate(&desStream);
+        cudaMemcpyAsync(srcData, src.data, sizeof(uchar)*src.rows*src.cols, cudaMemcpyHostToDevice, srcStream);
+        cudaMemcpyAsync(desData, des.data, sizeof(float1)*des.rows*des.cols, cudaMemcpyHostToDevice, desStream);
+        // block here until the data copy is finished
+        cudaStreamSynchronize(srcStream); cudaStreamSynchronize(desStream);
 
+        cudaMemset(desData, 0, sizeof(float1)*des.rows*des.cols);
 
-        cudaMemset(destinationData, 0, sizeof(uchar)*destination.rows*destination.cols);
-    /*case 3:
-        uchar3 * 3chSourceData;uchar3* 3*/
+        //call kernel function
+        int dynamicSize = (2 * radius + 1)*(2 * radius + 1) * sizeof(float);
+        gaussianBlur<<<blockSize, threadSize, dynamicSize>>> ()
+
+        // get data back to host
+        cudaError_t error = cudaDeviceSynchronize();
+        if (error != cudaSuccess)
+        {
+            cout << cudaGetErrorString(error) << endl;
+        }
+        cudaMemcpy(des.data, desData, sizeof(float1)*des.rows*des.cols, cudaMemcpyDeviceToHost);
+
+        // recource releasing
+        cudaStreamDestroy(srcStream); cudaStreamDestroy(desStream);
+        cudaFree(srcData); cudaFree(desData);
     default:
         break;
     }
