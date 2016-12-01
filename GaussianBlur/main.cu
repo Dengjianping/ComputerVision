@@ -22,7 +22,7 @@ __device__ float twoDimGaussian(int x, int y, float theta)
     return coeffient*expf(powerIndex);
 }
 
-__global__ void gaussianBlur(uchar* input, size_t srcPitch, int rows, int cols, uchar* output, size_t dstPitch, int radius, float theta = 1.0)
+__global__ void gaussianBlur(uchar* input, size_t srcPitch, int rows, int cols, float* output, size_t dstPitch, int radius, float theta = 1.0)
 {
     // use a 1-dim array to store gaussian matrix
     extern __shared__ float gaussian[];
@@ -30,14 +30,16 @@ __global__ void gaussianBlur(uchar* input, size_t srcPitch, int rows, int cols, 
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
 
-    if (row < 2 * radius + 1 && col < 2 * radius + 1)
-    {
-        gaussian[row*(2 * radius + 1) + col] = twoDimGaussian(col - radius, radius - row, theta);
-    }
-    __syncthreads();
-
     if (row < rows&&col < cols)
     {
+        // generate a gaussian matrix
+        if (row < 2 * radius + 1 && col < 2 * radius + 1)
+        {
+            float sum = 0.0;
+            gaussian[row*(2 * radius + 1) + col] = twoDimGaussian(col - radius, radius - row, theta);
+            __syncthreads();
+        }
+
         for (size_t i = 0; i < 2 * radius + 1; i++)
         {
             for (size_t j = 0; j < 2 * radius + 1; j++)
@@ -45,8 +47,8 @@ __global__ void gaussianBlur(uchar* input, size_t srcPitch, int rows, int cols, 
                 // convolving, about how addressing matrix in device, 
                 // see this link http://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html#group__CUDART__MEMORY_1g32bd7a39135594788a542ae72217775c
                 uchar *inputValue = (uchar *)((char *)input + row*srcPitch) + col;
-                uchar *outputValue = (uchar *)((char *)output + (row + i)*dstPitch) + (col + j);
-                *outputValue += (*inputValue) * gaussian[i*(2 * radius + 1) + j];
+                float *outputValue = (float *)((char *)output + (row + i)*dstPitch) + (col + j);                
+                *outputValue += (float)(*inputValue) * gaussian[i*(2 * radius + 1) + j];
             }
         }
     }
@@ -74,63 +76,72 @@ void gaussianBlur(const Mat & src, const Mat & dst, int radius, float theta = 1.
     cudaStreamCreate(&srcStream); cudaStreamCreate(&dstStream);
 
     // copy data to device
-    int channelCount = src.channels();
-    switch (channelCount)
+    uchar* srcData; float* dstData;
+        
+    size_t srcPitch;
+    cudaMallocPitch(&srcData, &srcPitch, sizeof(uchar)*src.cols, src.rows);
+    cudaMemcpy2DAsync(srcData, srcPitch, src.data, src.cols*sizeof(uchar), src.cols*sizeof(uchar), src.rows, cudaMemcpyHostToDevice, srcStream);
+        
+    size_t dstPitch;
+    cudaMallocPitch(&dstData, &dstPitch, sizeof(float)*dst.cols, dst.rows);
+    cudaMemcpy2DAsync(dstData, dstPitch, dst.data, dst.cols*sizeof(float), dst.cols*sizeof(float), dst.rows, cudaMemcpyHostToDevice, dstStream);
+    cudaStreamSynchronize(srcStream); cudaStreamSynchronize(dstStream);
+        
+    int dynamicSize = (2 * radius + 1)*(2 * radius + 1) * sizeof(float);
+    gaussianBlur <<<blockSize, threadSize, dynamicSize>>> (srcData, srcPitch, src.rows, src.cols, dstData, dstPitch, radius, theta=1.5);
+        
+    cudaError_t error = cudaDeviceSynchronize();
+    if (error != cudaSuccess)
     {
-    // handle 1 channel image
-    case 1:
-        uchar* srcData; float1* dstData;
-        
-        size_t srcPitch;
-        cudaMallocPitch(&srcData, &srcPitch, sizeof(uchar)*src.cols, src.rows);
-        cudaMemcpy2DAsync(srcData, srcPitch, src.data, src.cols*sizeof(uchar), src.cols*sizeof(uchar), src.rows, cudaMemcpyHostToDevice, srcStream);
-        
-        size_t dstPitch;
-        cudaMallocPitch(&dstData, &dstPitch, sizeof(float1)*dst.cols, dst.rows);
-        cudaMemcpy2DAsync(dstData, dstPitch, dst.data, dst.cols*sizeof(float1), dst.cols*sizeof(float1), dst.rows, cudaMemcpyHostToDevice, dstStream);
-        cudaStreamSynchronize(srcStream); cudaStreamSynchronize(dstStream);
-        
-        int dynamicSize = (2 * radius + 1)*(2 * radius + 1) * sizeof(float);
-        gaussianBlur<<<blockSize, threadSize, dynamicSize>>> (srcData, srcPitch, src.rows, src.cols, dstData, dstPitch, radius);
-        
-        cudaError_t error = cudaDeviceSynchronize();
-        if (error != cudaSuccess)
-        {
-            cout << cudaGetErrorString(error) << endl;
-        }
-        cudaMemcpy(dst.data, dstData, sizeof(float1)*dst.rows*dst.cols, cudaMemcpyDeviceToHost);       
-        
-        // recource releasing
-        cudaFree(srcData); cudaFree(dstData);
-    default:
-        break;
+        cout << cudaGetErrorString(error) << endl;
     }
-    cudaStreamdsttroy(srcStream); cudaStreamdsttroy(dstStream);
+    
+    // copy data back to host
+    cudaMemcpy2D(dst.data, sizeof(float)*dst.cols, dstData, dstPitch, sizeof(float)*dst.cols, dst.rows, cudaMemcpyDeviceToHost);
+        
+    // recource releasing
+    cudaFree(srcData); cudaFree(dstData);
+
+    cudaStreamDestroy(srcStream); cudaStreamDestroy(dstStream);
 }
 
 
 int main(void)
 {
-    string path = "type-c.jpg";
+    //string path = "type-c.jpg";
+    string path = "aff 092.jpg";
     
     // source image
     Mat hostInput = imread(path, IMREAD_GRAYSCALE);
     
     // gaussian kernel radius, the size is 2 * radius + 1, odd number is convenient for computing
-    int radius = 2;
-    Mat hostOutput(Size(hostInput.rows + 2*radius, hostInput.cols + 2*radius), CV_32F, Scalar(0));
+    int radius = 1;
+    Mat hostOutput(Size(hostInput.cols + 2 * radius, hostInput.rows + 2 * radius), CV_32F, Scalar(0));
     
-    gaussianBlur(hostInput, hostOutput, radius)
+    cudaEvent_t start, end;
+    cudaEventCreate(&start); cudaEventCreate(&end);
+
+    cudaEventRecord(start);
+    gaussianBlur(hostInput, hostOutput, radius);
+    cudaEventRecord(end);
+    cudaEventSynchronize(end); // hold here to wait all event finish
+
+    float time;
+    cudaEventElapsedTime(&time, start, end);
+    cudaEventDestroy(start); cudaEventDestroy(end);
+
+    cout << "time cost: " << time << endl;
     
     /* 
     need to convert to CV_8U type, because a CV_32F image, whose pixel value ranges from 0.0 to 1.0
     http://stackoverflow.com/questions/14539498/change-type-of-mat-object-from-cv-32f-to-cv-8u
     */
+    Mat result;
     hostOutput.convertTo(result, CV_8U);
 
     string title = "CUDA";
     namedWindow(title);
-    imshow(title, hostOutput);
+    imshow(title, result);
 
     waitKey(0);
     //system("pause");
