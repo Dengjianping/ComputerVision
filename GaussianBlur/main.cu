@@ -37,7 +37,7 @@ __global__ void gaussianBlur(uchar* input, size_t srcPitch, int rows, int cols, 
         {
             float sum = 0.0;
             gaussian[row*(2 * radius + 1) + col] = twoDimGaussian(col - radius, radius - row, theta);
-            __syncthreads();
+            __syncthreads();           
         }
 
         for (size_t i = 0; i < 2 * radius + 1; i++)
@@ -114,7 +114,7 @@ int main(void)
     Mat hostInput = imread(path, IMREAD_GRAYSCALE);
     
     // gaussian kernel radius, the size is 2 * radius + 1, odd number is convenient for computing
-    int radius = 1;
+    int radius = 2;
     Mat hostOutput(Size(hostInput.cols + 2 * radius, hostInput.rows + 2 * radius), CV_32F, Scalar(0));
     
     cudaEvent_t start, end;
@@ -129,7 +129,7 @@ int main(void)
     cudaEventElapsedTime(&time, start, end);
     cudaEventDestroy(start); cudaEventDestroy(end);
 
-    cout << "time cost: " << time << endl;
+    cout << "time cost on device: " << time << endl;
     
     /* 
     need to convert to CV_8U type, because a CV_32F image, whose pixel value ranges from 0.0 to 1.0
@@ -137,6 +137,13 @@ int main(void)
     */
     Mat result;
     hostOutput.convertTo(result, CV_8U);
+
+    Mat cpu;
+    double cpuStart = (double)getTickCount();
+    GaussianBlur(hostInput, cpu, Size(3, 3), 1.0);
+    double cpuEnd = (double)getTickCount();
+    double cpuTime = (cpuEnd - cpuStart) / getTickFrequency();
+    cout << "time cost on cpu: " << cpuTime * 1000 << endl; // millisecond return
 
     string title = "CUDA";
     namedWindow(title);
