@@ -8,3 +8,12 @@ original
 ![original](type-c.jpg)
 blurred
 ![blurred](blurred.jpg)
+
+## Time Cost
+```cpp
+my computer cofiguration: ThinkPad T420 with I5-2520 and GPU NVS4200
+```
+### 
+
+## Tips
+### This algorithm just implement for handle 1-channel image

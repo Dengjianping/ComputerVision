@@ -99,7 +99,7 @@ void gaussianBlur(const Mat & src, const Mat & dst, int radius, float theta = 1.
     // copy data back to host
     cudaMemcpy2D(dst.data, sizeof(float)*dst.cols, dstData, dstPitch, sizeof(float)*dst.cols, dst.rows, cudaMemcpyDeviceToHost);
         
-    // recource releasing
+    // resource releasing
     cudaFree(srcData); cudaFree(dstData);
 
     cudaStreamDestroy(srcStream); cudaStreamDestroy(dstStream);
@@ -108,8 +108,7 @@ void gaussianBlur(const Mat & src, const Mat & dst, int radius, float theta = 1.
 
 int main(void)
 {
-    //string path = "type-c.jpg";
-    string path = "aff 092.jpg";
+    string path = "type-c.jpg";
     
     // source image
     Mat hostInput = imread(path, IMREAD_GRAYSCALE);
