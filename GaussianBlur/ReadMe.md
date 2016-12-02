@@ -9,7 +9,7 @@ original
 blurred
 ![blurred](blurred.jpg)
 
-## Time Cost
+## Time Cost:
 ```cpp
 my computer cofiguration: ThinkPad T420 with I5-2520 and GPU NVS4200
 Sameple image info: 600 * 450
@@ -21,3 +21,4 @@ Summary: GPU really gives a huge boost to handling image processing when compari
 
 ## Tips
 ### This algorithm just implement for handle 1-channel image.
+### And my Opencv path on my computer is ```C:\Program Files\opencv\install```
