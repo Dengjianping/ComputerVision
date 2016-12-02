@@ -4,9 +4,8 @@
 [gaussian blur](https://en.wikipedia.org/wiki/Gaussian_blur)
 
 ## Result
-original
 ![original](type-c.jpg)
-blurred
+:boom::boom::boom::boom:
 ![blurred](blurred.jpg)
 
 ## Time Cost:
