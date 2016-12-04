@@ -93,7 +93,19 @@ void sobelOperator(const Mat & input, Mat & output)
     cudaMemset(gx, 0, sizeof(float)*output.rows*output.cols);
     cudaMemset(gy, 0, sizeof(float)*output.rows*output.cols);
 
-    dim3 blockSize(17, 17);
+    // define blocks size and threads size
+    int deviceCount;
+    cudaGetDeviceCount(&deviceCount);
+    cudaDeviceProp prop;
+    cudaGetDeviceProperties(&prop, deviceCount - 1);
+
+    /*
+    my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least,
+    each block can contain 1024 threads at most in my device, so ,I can define block size as 600 * 450 / 1024 = 263 (20 * 15)
+    */
+    int blockCount = (int)(input.rows * input.cols / prop.maxThreadsPerBlock) + 1;
+    blockCount = (int)(sqrt(blockCount)) + 1;
+    dim3 blockSize(blockCount, blockCount);
     dim3 threadSize(32, 32);
 
     sobelOperator <<<blockSize, threadSize >>>(src, input.rows, input.cols, srcPitch, gx, gy, dst, dstPitch);
@@ -140,7 +152,7 @@ int main()
     namedWindow(title);
     imshow(title, result);
     waitKey(0);
-    //imwrite("sobel.jpg", result);
+    imwrite("sobel.jpg", result);
 
     return 0;
 }

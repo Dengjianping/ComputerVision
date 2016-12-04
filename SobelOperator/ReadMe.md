@@ -24,8 +24,8 @@ If the source matrix is **A**, convolve **A** with **gx** to get matrix **GX**, 
 ```cpp
 my computer cofiguration: ThinkPad T420 with I5-2520 and GPU NVS4200
 Sameple image info: 600 * 450, 3-channels.
-time cost on device: 9.07ms.
-time cost on cpu: 116.167ms. Use opencv API.
+time cost on device: 15.68ms.
+time cost on cpu: 98.74ms. Use opencv API.
 Summary: GPU really gives a huge boost to handling image processing when comparing to cpu.
 In release mode, it may be faster.
 ```
@@ -34,3 +34,6 @@ In release mode, it may be faster.
 ## Tips
 ### This algorithm just implement for handle 1-channel image.
 ### And my Opencv path on my computer is ```C:\Program Files\opencv\install```
+
+# Debug
+## Too much noise happens after sobel filter is applied. See the [issue](https://github.com/Dengjianping/ComputerVision/issues/1)
