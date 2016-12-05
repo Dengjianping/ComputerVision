@@ -14,6 +14,8 @@
 using namespace std;
 using namespace cv;
 
+#define MAX_THREADS 32
+
 __constant__ float PI = 3.1415;
 
 enum curves { Gaussian, Line, Circle, Ellipse, ArchimedeanSpiral, Cardioid };
@@ -22,18 +24,17 @@ enum curves { Gaussian, Line, Circle, Ellipse, ArchimedeanSpiral, Cardioid };
 // https://github.com/samjabrahams/tensorflow-on-raspberry-pi/releases
 // https://my.oschina.net/hardbone/blog/798552
 
-__global__ void drawLine(float* src, size_t inputPitch, int rows, int cols, float theta, float pitch, float* dst, size_t outputPitch)
+__global__ void drawLine(float* src, size_t inputPitch, int rows, int cols, float slope, float pitch, float* dst, size_t outputPitch, float thickness)
 {
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
-    float slope = tanh(theta*PI / 180.0);
 
     float x = (float)(col - cols / 2);
     float y = (float)(rows / 2 - row);
 
     if (row < rows&&col < cols)
     {
-        if (y - (slope*x + pitch) <= 10.0&&y - (slope*x + pitch)>=-10.0)
+        if (fabsf(y - (slope*x + pitch)) <= thickness)
         {
             float* outputPixel = (float*)((char*)dst +row*outputPitch) + col;
             *outputPixel = 0.0; // make this point of pixel value as black
@@ -41,10 +42,26 @@ __global__ void drawLine(float* src, size_t inputPitch, int rows, int cols, floa
     }
 }
 
-__global__ void drawCircle()
-{}
+__global__ void drawCircle(float* src, size_t inputPitch, int rows, int cols, float centerX, float centerY, float radius, float* dst, size_t outputPitch, float thickness)
+{
+    int row = blockDim.y*blockIdx.y + threadIdx.y;
+    int col = blockDim.x*blockIdx.x + threadIdx.x;
 
-void drawCurves(const Mat & input, float theta, float pitch, Mat & output, curves type)
+    float x = (float)(col - cols / 2);
+    float y = (float)(rows / 2 - row);
+
+    if (row < rows&&col < cols)
+    {
+        float t = sqrtf(powf(x - centerX, 2) + powf(y - centerY, 2));
+        if (t >= radius && t <= radius + thickness)
+        {
+            float* outputPixel = (float*)((char*)dst + row*outputPitch) + col;
+            *outputPixel = 0.0; // make this point of pixel value as black
+        }
+    }
+}
+
+void drawCurves(const Mat & input, float slope, float pitch, Mat & output, curves type, float thickness)
 {
     // define blocks size and threads size
     int deviceCount;
@@ -56,10 +73,8 @@ void drawCurves(const Mat & input, float theta, float pitch, Mat & output, curve
     my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least,
     each block can contain 1024 threads at most in my device, so ,I can define block size as 600 * 450 / 1024 = 263 (20 * 15)
     */
-    int blockCount = (int)(input.rows * input.cols / prop.maxThreadsPerBlock) + 1;
-    blockCount = (int)(sqrt(blockCount)) + 1;
-    dim3 blockSize(blockCount, blockCount);
-    dim3 threadSize(32, 32);
+    dim3 blockSize(input.cols / MAX_THREADS + 1, input.rows / MAX_THREADS + 1);
+    dim3 threadSize(MAX_THREADS, MAX_THREADS);
 
     size_t inputPitch, outputPitch;
     float* src; float* dst;
@@ -80,9 +95,10 @@ void drawCurves(const Mat & input, float theta, float pitch, Mat & output, curve
     case Gaussian:
         break;
     case Line:
-        drawLine <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, theta, pitch, dst, outputPitch);
+        drawLine <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, slope, pitch, dst, outputPitch, thickness);
         break;
     case Circle:
+        drawCircle <<<blockSize, threadSize >>> (src, inputPitch, input.rows, input.cols, 10, 10, 80, dst, outputPitch, thickness);
         break;
     case Ellipse:
         break;
@@ -107,16 +123,18 @@ int main()
     Mat white(Size(801, 601), CV_8U, Scalar(255)); // use odd number of size is convenient for computing
     white.convertTo(white, CV_32F);
 
-    Mat result = white;
-    float theta = 30;
-    float pitch = 30;
+    Mat result = white.clone();
+    float theta = 45.0;
+    float slope = tan(theta*3.14 / 180.0);
+    float pitch = 30.0;
+    float thickness = 5;
 
     float time;
     cudaEvent_t start, end;
     cudaEventCreate(&start); cudaEventCreate(&end);
     cudaEventRecord(start);
 
-    drawCurves(white, theta, pitch, result, Line);
+    drawCurves(white, slope, pitch, result, Circle, thickness);
 
     cudaEventRecord(end);
     cudaEventSynchronize(end);

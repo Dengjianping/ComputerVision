@@ -13,6 +13,8 @@
 using namespace std; 
 using namespace cv;
 
+#define MAX_THREADS 32
+
 __constant__ float sobelKernelXC[3][3] = { { -1.0,0.0,1.0 },{ -2.0,0.0,2.0 },{ -1.0,0.0,1.0 } };
 __constant__ float sobelKernelYC[3][3] = { { 1.0,2.0,1.0 },{ 0.0,0.0,0.0 },{ -1.0,-2.0,-1.0 } };
 
@@ -103,10 +105,8 @@ void sobelOperator(const Mat & input, Mat & output)
     my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least,
     each block can contain 1024 threads at most in my device, so ,I can define block size as 600 * 450 / 1024 = 263 (20 * 15)
     */
-    int blockCount = (int)(input.rows * input.cols / prop.maxThreadsPerBlock) + 1;
-    blockCount = (int)(sqrt(blockCount)) + 1;
-    dim3 blockSize(blockCount, blockCount);
-    dim3 threadSize(32, 32);
+    dim3 blockSize(input.cols / MAX_THREADS + 1, input.rows / MAX_THREADS + 1);
+    dim3 threadSize(MAX_THREADS, MAX_THREADS);
 
     sobelOperator <<<blockSize, threadSize >>>(src, input.rows, input.cols, srcPitch, gx, gy, dst, dstPitch);
     cudaError_t error = cudaDeviceSynchronize();
