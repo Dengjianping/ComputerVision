@@ -16,7 +16,11 @@ using namespace cv;
 
 __constant__ float PI = 3.1415;
 
-enum curves { Gaussian, Line, Circle, Ellipse };
+enum curves { Gaussian, Line, Circle, Ellipse, ArchimedeanSpiral, Cardioid };
+
+// int __float_as_int_(fvalue)
+// https://github.com/samjabrahams/tensorflow-on-raspberry-pi/releases
+// https://my.oschina.net/hardbone/blog/798552
 
 __global__ void drawLine(float* src, size_t inputPitch, int rows, int cols, float theta, float pitch, float* dst, size_t outputPitch)
 {
