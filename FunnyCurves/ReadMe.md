@@ -15,7 +15,7 @@ just show you some interesting curves like heart curve, archimedean spiral.
 ```cpp
 my computer cofiguration: ThinkPad T420 with I5-2520 and GPU NVS4200
 Sameple image info: 801 * 601, 1-channels.
-time cost on device: 50.81 ms. By the way, time cost contains these five curves running time.
+time cost on device: 50.81 ms. By the way, time cost contains these four curves running time.
 ```
 
 ## Tips
