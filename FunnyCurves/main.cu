@@ -17,7 +17,7 @@ using namespace std;
 using namespace cv;
 
 
-enum curves { Gaussian, Line, Circle, ArchimedeanSpiral, Cardioid }; // kinds of curves, definitely there're others interesting curves
+enum curves { Line, Circle, ArchimedeanSpiral, Cardioid }; // kinds of curves, definitely there're others interesting curves
 __constant__ float PI = 3.1415;
 
 
@@ -60,32 +60,6 @@ __global__ void drawCircle(float* src, size_t inputPitch, int rows, int cols, fl
     }
 }
 
-__device__ float gaussianEquation(,float x, float symmetry, float stdError)
-{
-    float coeffient = 1 / (sqrtf(2*PI)*stdError);
-    float powerIndex = powf(x-symmetry, 2)/(2*powf(stdError,2));
-    return coeffient*expf(-powerIndex);
-}
-
-// 1-dim gaussian equation like (1/(sqrt(2*PI))*stdError)*exp(-(x-symmetry)**2/(2*(stdError**2)))
-__global__ void drawGaussian(float* src, size_t inputPitch, int rows, int cols, float symmetry, float stdError, float* dst, size_t outputPitch, float thickness)
-{
-    int row = blockDim.y*blockIdx.y + threadIdx.y;
-    int col = blockDim.x*blockIdx.x + threadIdx.x;
-
-    float x = (float)(col - cols / 2);
-    float y = (float)(rows / 2 - row);
-
-    if (row < rows&&col < cols)
-    {
-        if (fabsf(y - gaussianEquation(x, symmetry, stdError) <=thickness)
-        {
-            float* outputPixel = (float*)((char*)dst + row*outputPitch) + col;
-            *outputPixel = 0.0; // make this point of pixel value as black
-        }
-    }
-}
-
 /*  
     change cartesian coordinate to polor coordinate, example point M(x, y), target P(radius, theta), radius = sqrt(x*x + y*y), theta = arctan(y / x), and 
     archimedean spiral equation like this: radius = a + b*theta, just let the point of pixel meets the equation
@@ -100,9 +74,9 @@ __global__ void drawSpiral(float* src, size_t inputPitch, int rows, int cols, fl
 
     if (row < rows&&col < cols)
     {
-        float radius = sqrtf(x * x+y * y);
-        float theta = atanf(y / x);
-        if (fabsf(radius - (a+theta*b) <=thickness)
+        float radius = sqrtf(x * x + y * y);
+        float theta = atan2f(y, x);
+        if (fabsf(radius - (a + theta*b)) <= thickness)
         {
             float* outputPixel = (float*)((char*)dst + row*outputPitch) + col;
             *outputPixel = 0.0; // make this point of pixel value as black
@@ -126,8 +100,8 @@ __global__ void drawHeart(float* src, size_t inputPitch, int rows, int cols, flo
     if (row < rows&&col < cols)
     {
         float radius = sqrtf(x * x+y * y);
-        float theta = atanf(y / x);
-        if (fabsf(radius - a*(1 - cosf(theta)) <=thickness)
+        float theta = atan2f(y, x);
+        if (fabsf(radius - a*(1 - sinf(theta))) <=thickness)
         {
             float* outputPixel = (float*)((char*)dst + row*outputPitch) + col;
             *outputPixel = 0.0; // make this point of pixel value as black
@@ -166,32 +140,35 @@ void drawCurves(const Mat & input, Mat & output, curves type, float thickness)
     cudaError_t error;
     switch (type)
     {
-    case Gaussian:
-        float symmetry = 0.0;
-        float stdError = 0.5;
-        drawGaussian <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, symmetry, stdError, dst, outputPitch, thickness);
-        break;
     case Line:
+    {
         float theta = 45.0;
         float slope = tan(theta*3.14 / 180.0);
         float pitch = 30.0;
         drawLine <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, slope, pitch, dst, outputPitch, thickness);
         break;
+    }
     case Circle:
+    {
         float centerX = 20.0;
         float centerY = 50.0;
         float radius = 80.0;
-        drawCircle <<<blockSize, threadSize >>> (src, inputPitch, input.rows, input.cols, centerX, centerY, radius, dst, outputPitch, thickness);
+        drawCircle <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, centerX, centerY, radius, dst, outputPitch, thickness);
         break;
+    }
     case ArchimedeanSpiral:
-        float a = 20.0;
-        float b = 30.0;
+    {
+        float a = 100.0;
+        float b = 40.0;
         drawSpiral <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, a, b, dst, outputPitch, thickness);
         break;
+    }
     case Cardioid:
-        float a = 10.0;
-        drawHeart <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, a, dst, outputPitch, thickness);
+    {
+        float amp = 80.0;
+        drawHeart <<<blockSize, threadSize>>> (src, inputPitch, input.rows, input.cols, amp, dst, outputPitch, thickness);
         break;
+    }
     default:
         break;
     }
@@ -221,7 +198,6 @@ int main()
     cudaEventRecord(start);
     
     float thickness = 5;
-    drawCurves(white, result, Gaussian, thickness);
     drawCurves(white, result, Line, thickness);
     drawCurves(white, result, Circle, thickness);
     drawCurves(white, result, ArchimedeanSpiral, thickness);
