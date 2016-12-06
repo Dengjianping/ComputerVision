@@ -138,7 +138,10 @@ int main()
     cudaEventSynchronize(end);
     float time;
     cudaEventElapsedTime(&time, start, end);
+    
     cout << "time cost on device: " << time << " ms." << endl;
+    
+    cudaEventDestroy(start); cudaEventDestroy(end);
 
     Mat sobel;
     double cpuStart = (double)getTickCount();

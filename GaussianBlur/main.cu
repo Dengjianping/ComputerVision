@@ -129,7 +129,7 @@ int main(void)
     cudaEventElapsedTime(&time, start, end);
     cudaEventDestroy(start); cudaEventDestroy(end);
 
-    cout << "time cost on device: " << time << endl;
+    cout << "time cost on device: " << time << " ms" << endl;
     
     /* 
     need to convert to CV_8U type, because a CV_32F image, whose pixel value ranges from 0.0 to 1.0
@@ -143,7 +143,7 @@ int main(void)
     GaussianBlur(hostInput, cpu, Size(3, 3), 1.0);
     double cpuEnd = (double)getTickCount();
     double cpuTime = (cpuEnd - cpuStart) / getTickFrequency();
-    cout << "time cost on cpu: " << cpuTime * 1000 << endl; // millisecond return
+    cout << "time cost on cpu: " << cpuTime * 1000 << " ms" << endl; // millisecond return
 
     string title = "CUDA";
     namedWindow(title);
