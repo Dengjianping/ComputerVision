@@ -10,6 +10,8 @@
 #include <opencv2\imgcodecs.hpp>
 #include <opencv2\imgproc.hpp>
 
+#define MAX_THREADS 32
+
 using namespace std;
 using namespace cv;
 
@@ -66,10 +68,8 @@ void gaussianBlur(const Mat & src, const Mat & dst, int radius, float theta = 1.
     my sample image size is 600 * 450, so we need 600 * 450 threads to process this image on device at least, 
     each block can contain 1024 threads at most in my device, so ,I can define block size as 600 * 450 / 1024 = 263 (20 * 15)
     */
-    int blockCount = (int)(dst.rows * dst.cols / prop.maxThreadsPerBlock) + 1;
-    blockCount = (int)(sqrt(blockCount)) + 1;
-    dim3 blockSize(blockCount, blockCount);
-    dim3 threadSize(32, 32);
+    dim3 blockSize(src.cols / MAX_THREADS + 1, src.rows / MAX_THREADS + 1);
+    dim3 threadSize(MAX_THREADS, MAX_THREADS);
     
     // create 2 streams to asynchronously copy data to device
     cudaStream_t srcStream, dstStream;
