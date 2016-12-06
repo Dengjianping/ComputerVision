@@ -3,8 +3,8 @@
 ```
 For general curves I don't want to list explanation here, just show you some interesting curves like heart curve, archimedean spiral.
 ```
-[Heart Curve](https://en.wikipedia.org/wiki/Cardioid)
-[Archimedean Spiral](https://en.wikipedia.org/wiki/Archimedean_spiral)
+- [Heart Curve](https://en.wikipedia.org/wiki/Cardioid)
+- [Archimedean Spiral](https://en.wikipedia.org/wiki/Archimedean_spiral)
 
 ## Result
 ![curves](curves.jpg)
