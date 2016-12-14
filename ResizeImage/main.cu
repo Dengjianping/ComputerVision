@@ -22,11 +22,7 @@ __global__ void enlarge(float* src, size_t inputPitch, int rows, int cols, float
 
     if (row < rows&&col < cols)
     {
-        // get 4 coordinators points back
-        /*float* q11 = (float*)((char*)src + ((int)(row*rowRatio))*inputPitch) + (int)(col*colRatio);
-        float* q12 = (float*)((char*)src + (((int)(row*rowRatio) + 1))*inputPitch) + (int)(col*colRatio);
-        float* q21 = (float*)((char*)src + ((int)(row*rowRatio))*inputPitch) + (int)(col*colRatio) + 1;
-        float* q22 = (float*)((char*)src + (((int)(row*rowRatio) + 1))*inputPitch) + (int)(col*colRatio) + 1;*/
+        // get 4 adjacent pixel points back
 
         float* q11 = (float*)((char*)src + ((int)(row*colRatio))*inputPitch) + (int)(col*rowRatio);
         float* q12 = (float*)((char*)src + (((int)(row*colRatio) + 1))*inputPitch) + (int)(col*rowRatio);
@@ -82,11 +78,27 @@ int main()
     img.convertTo(img, CV_32F);
     float alpha = 2;
     Mat result(Size(img.cols*alpha, img.rows*alpha), CV_32F, Scalar(0));
-
+    
+    cudaEvent_t start, end;
+    cudaEventCreate(&start); cudaEventCreate(&end);
+    
+    cudaEventRecord(start);
     resizeImage(img, result);
+    cudaEventRecord(end);
+    cudaEventSychronize(end);
+    
+    float time;
+    cudaEventElapsedTime(&time, start, end);
+    cout << "time cost co GPU: " << time << " ms." << endl;
+    
+    cudaEventDestroy(start); cudaEventDestroy(end);
 
     string title = "CUDA";
     namedWindow(title);
+    /* 
+    need to convert to CV_8U type, because a CV_32F image, whose pixel value ranges from 0.0 to 1.0
+    http://stackoverflow.com/questions/14539498/change-type-of-mat-object-from-cv-32f-to-cv-8u
+    */
     result.convertTo(result, CV_8U);
     imshow(title, result);
     waitKey(0);
