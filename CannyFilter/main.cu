@@ -26,7 +26,7 @@ __device__ float twoDimGaussian(int x, int y, float theta)
     return coeffient*expf(powerIndex);
 }
 
-__global__ void cannyFilter(size_t srcPitch, size_t dstPitch, int rows, int cols, int gaussianRadius, float theta, float* gradientX, float* gradientY)
+__global__ void cannyFilter(float* src, float* dst, size_t srcPitch, size_t dstPitch, int rows, int cols, int gaussianRadius, float theta, float* gradientX, float* gradientY)
 {
     extern __shared__ float gaussianKernel[];
     
@@ -48,9 +48,9 @@ __global__ void cannyFilter(size_t srcPitch, size_t dstPitch, int rows, int cols
             {
                 // convolving, about how addressing matrix in device, 
                 // see this link http://docs.nvidia.com/cuda/cuda-runtime-api/group__CUDART__MEMORY.html#group__CUDART__MEMORY_1g32bd7a39135594788a542ae72217775c
-                float *inputValue = (float *)((char *)input + row*srcPitch) + col;
-                float *outputValue = (float *)((char *)output + (row + i)*dstPitch) + (col + j);                
-                *outputValue += (float)(*inputValue) * gaussian[i*(2 * gaussianRadius + 1) + j];
+                float *inputValue = (float *)((char *)src + row*srcPitch) + col;
+                float *outputValue = (float *)((char *)dst + (row + i)*dstPitch) + (col + j);                
+                *outputValue += (float)(*inputValue) * gaussianKernel[i*(2 * gaussianRadius + 1) + j];
             }
         }
         
@@ -73,10 +73,10 @@ __global__ void cannyFilter(size_t srcPitch, size_t dstPitch, int rows, int cols
     }
 }
 
-void CannyFilter(const Mat & input, Mat & output)
+void CannyFilter(Mat & input, Mat & output)
 {
     // convert uchar to float for computing conveniently
-    input.convertTo(img, CV_32F);
+    input.convertTo(input, CV_32F);
     output.convertTo(output, CV_32F);
     
     float* src; float* dst;
@@ -90,11 +90,12 @@ void CannyFilter(const Mat & input, Mat & output)
     cudaMallocPitch(&dst, &dstPitch, sizeof(float)*output.cols, output.rows);
     
     // copy data to device
-    cudaMemcpy2DAsync(src, srcPitch, input.data, sizeof(float)*input.cols, sizeof(float)*input.cols, input.rows, srcStream);
-    cudaMemcpy2DAsync(dst, dstPitch, output.data, sizeof(float)*output.cols, sizeof(float)*output.cols, output.rows, dstStream);
+    cudaMemcpy2DAsync(src, srcPitch, input.data, sizeof(float)*input.cols, sizeof(float)*input.cols, input.rows, cudaMemcpyHostToDevice, srcStream);
+    cudaMemcpy2DAsync(dst, dstPitch, output.data, sizeof(float)*output.cols, sizeof(float)*output.cols, output.rows, cudaMemcpyHostToDevice, dstStream);
     
     // hold here to wait data copy complete
-    cudaStreamSychronize(srcStream); cudaStreamSychronize(dstStream);
+    cudaStreamSynchronize(srcStream); cudaStreamSynchronize(dstStream);
+    
     
     float* gradientX; float* gradientY;
     size_t gxPitch, gyPitch;
@@ -103,9 +104,9 @@ void CannyFilter(const Mat & input, Mat & output)
     
     cudaStream_t gxStream, gyStream;
     cudaStreamCreate(&gxStream); cudaStreamCreate(&gyStream);
-    cudaMemcpy2DAsync(gradientX, gxPitch, output.data, sizeof(float)*output.cols, sizeof(float)*output.cols, output.rows, gxStream);
-    cudaMemcpy2DAsync(gradientY, gyPitch, output.data, sizeof(float)*output.cols, sizeof(float)*output.cols, output.rows, gyStream);
-    cudaStreamSychronize(gxStream); cudaStreamSychronize(gyStream);
+    cudaMemcpy2DAsync(gradientX, gxPitch, output.data, sizeof(float)*output.cols, sizeof(float)*output.cols, output.rows, cudaMemcpyHostToDevice, gxStream);
+    cudaMemcpy2DAsync(gradientY, gyPitch, output.data, sizeof(float)*output.cols, sizeof(float)*output.cols, output.rows, cudaMemcpyHostToDevice, gyStream);
+    cudaStreamSynchronize(gxStream); cudaStreamSynchronize(gyStream);
 }
 
 int main()
@@ -122,10 +123,10 @@ int main()
     cudaEventRecord(start);
     //resizeImage(img, result);
     cudaEventRecord(end);
-    cudaEventSychronize(end);
+    cudaEventSynchronize(end);
     
     float time;
-    cudaEventEllapsedTime(&time, start, end);
+    cudaEventElapsedTime(&time, start, end);
     cout << "time cost co GPU: " << time << " ms." << endl;
 
     string title = "CUDA";
