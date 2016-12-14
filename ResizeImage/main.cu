@@ -41,8 +41,6 @@ void resizeImage(const Mat & input, Mat & output)
     float colRatio = (float)input.cols / (float)output.cols;
     // define block size and thread size
     dim3 blockSize(output.cols / MAX_THREADS + 1, output.rows / MAX_THREADS + 1);
-    cout << blockSize.x * blockSize.y *1024 << endl;
-    cout << input.rows*input.cols << endl;
     dim3 threadSize(MAX_THREADS, MAX_THREADS);
 
     cudaStream_t inputStream, outputStream;
@@ -78,6 +76,7 @@ int main()
     img.convertTo(img, CV_32F);
     float alpha = 2;
     Mat result(Size(img.cols*alpha, img.rows*alpha), CV_32F, Scalar(0));
+    Mat cpuResult;
     
     cudaEvent_t start, end;
     cudaEventCreate(&start); cudaEventCreate(&end);
@@ -85,13 +84,21 @@ int main()
     cudaEventRecord(start);
     resizeImage(img, result);
     cudaEventRecord(end);
-    cudaEventSychronize(end);
+    cudaEventSynchronize(end);
     
     float time;
     cudaEventElapsedTime(&time, start, end);
     cout << "time cost co GPU: " << time << " ms." << endl;
     
     cudaEventDestroy(start); cudaEventDestroy(end);
+
+    // test opencv api
+    double cpuStart = (double)getTickCount();
+    resize(img, cpuResult, Size(img.cols*alpha, img.rows*alpha));
+    double cpuEnd = (double)getTickCount();
+    double cpuTime = (cpuEnd - cpuStart) / getTickCount();
+    cout << "time cost co CPU: " << cpuTime * 1000 << " ms." << endl;
+    cpuResult.convertTo(cpuResult, CV_8U);
 
     string title = "CUDA";
     namedWindow(title);
@@ -102,6 +109,7 @@ int main()
     result.convertTo(result, CV_8U);
     imshow(title, result);
     waitKey(0);
+    imwrite("bigger.jpg", result);
 
     return 0;
 }
