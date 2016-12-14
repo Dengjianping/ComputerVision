@@ -20,32 +20,33 @@ __global__ void enlarge(float* src, size_t inputPitch, int rows, int cols, float
     int row = blockDim.y*blockIdx.y + threadIdx.y;
     int col = blockDim.x*blockIdx.x + threadIdx.x;
 
-    float x = float(col - cols / 2);
-    float y = float(rows / 2 - row);
-
     if (row < rows&&col < cols)
     {
         // get 4 coordinators points back
-        float* q11 = (float*)((char*)src + (int)(row*rowRatio)*inputPitch) + (int)(col*colRatio);
-        float* q12 = (float*)((char*)src + ((int)(row*rowRatio) + 1)*inputPitch) + (int)(col*colRatio);
-        float* q21 = (float*)((char*)src + (int)(row*rowRatio)*inputPitch) + (int)(col*colRatio) + 1;
-        float* q22 = (float*)((char*)src + ((int)(row*rowRatio) + 1)*inputPitch) + (int)(col*colRatio) + 1;
+        /*float* q11 = (float*)((char*)src + ((int)(row*rowRatio))*inputPitch) + (int)(col*colRatio);
+        float* q12 = (float*)((char*)src + (((int)(row*rowRatio) + 1))*inputPitch) + (int)(col*colRatio);
+        float* q21 = (float*)((char*)src + ((int)(row*rowRatio))*inputPitch) + (int)(col*colRatio) + 1;
+        float* q22 = (float*)((char*)src + (((int)(row*rowRatio) + 1))*inputPitch) + (int)(col*colRatio) + 1;*/
+
+        float* q11 = (float*)((char*)src + ((int)(row*colRatio))*inputPitch) + (int)(col*rowRatio);
+        float* q12 = (float*)((char*)src + (((int)(row*colRatio) + 1))*inputPitch) + (int)(col*rowRatio);
+        float* q21 = (float*)((char*)src + ((int)(row*colRatio))*inputPitch) + (int)(col*rowRatio) + 1;
+        float* q22 = (float*)((char*)src + (((int)(row*colRatio) + 1))*inputPitch) + (int)(col*rowRatio) + 1;
 
         // Bilinear Interpolation
-        float* outputPixel = (float*)((char*)dst + row*inputPitch) + col;
+        float* outputPixel = (float*)((char*)dst + row*outputPitch) + col;
         *outputPixel = (1 - rowRatio)*(1 - colRatio)*(*q11) + (1 - rowRatio)*colRatio*(*q12) + rowRatio*(1 - colRatio)*(*q21) + rowRatio*colRatio*(*q22);
     }
 }
 
-__global__ void shrink()
-{}
-
-void resizeImage(const Mat & input, Mat & output, float alpha)
+void resizeImage(const Mat & input, Mat & output)
 {
-    float rowRatio = (float)output.rows / (float)input.rows;
-    float colRatio = (float)output.cols / (float)output.cols;
+    float rowRatio = (float)input.rows / (float)output.rows;
+    float colRatio = (float)input.cols / (float)output.cols;
     // define block size and thread size
     dim3 blockSize(output.cols / MAX_THREADS + 1, output.rows / MAX_THREADS + 1);
+    cout << blockSize.x * blockSize.y *1024 << endl;
+    cout << input.rows*input.cols << endl;
     dim3 threadSize(MAX_THREADS, MAX_THREADS);
 
     cudaStream_t inputStream, outputStream;
@@ -61,7 +62,7 @@ void resizeImage(const Mat & input, Mat & output, float alpha)
 
     cudaStreamSynchronize(inputStream); cudaStreamSynchronize(outputStream);
 
-    //enlarge <<<blockSize, threadSize >>> ();
+    enlarge<<<blockSize, threadSize >>>(src, inputPitch, output.rows, output.cols, dst, outputPitch, rowRatio, colRatio);
     cudaError_t error = cudaDeviceSynchronize();
     if (error != cudaSuccess)
     {
@@ -78,12 +79,16 @@ int main()
 {
     string path = "type-c.jpg";
     Mat img = imread(path, IMREAD_GRAYSCALE);
-    float alpha = 1.5;
-    Mat result(Size(img.cols*alpha, img.rows*alpha), CV_8U, Scalar(0));
+    img.convertTo(img, CV_32F);
+    float alpha = 2;
+    Mat result(Size(img.cols*alpha, img.rows*alpha), CV_32F, Scalar(0));
+
+    resizeImage(img, result);
 
     string title = "CUDA";
     namedWindow(title);
-    imshow(title, img);
+    result.convertTo(result, CV_8U);
+    imshow(title, result);
     waitKey(0);
 
     return 0;
